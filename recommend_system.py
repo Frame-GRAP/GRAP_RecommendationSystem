@@ -157,6 +157,90 @@ def save_popular_by_tag():
     s3.upload_file('Json_For_GRAP/category_tab_list.json', AWS_BUCKET, 'category_tab_list.json')
 
 
+## 유저를 위한 추천 저장
+def save_recommend_for_user():
+    data = pd.read_csv('csv/my_ratings.csv')
+    data = data[['userId','movieId', 'rating']]
+    data.to_csv('csv/my_ratings_surprise.csv', index=False, header=False)
+
+    reader = Reader(line_format='user item rating', sep=',',
+                   rating_scale=(1, 5))
+    data = Dataset.load_from_file('csv/my_ratings_surprise.csv',reader=reader)
+    train, test = train_test_split(data, test_size=0.25,
+                                  random_state=42)
+
+    reader = Reader(line_format='user item rating', sep=',',
+                   rating_scale=(1, 5))
+
+    data_folds = DatasetAutoFolds(ratings_file='csv/my_ratings_surprise.csv',
+                                 reader=reader)
+
+    trainset = data_folds.build_full_trainset()
+    algo = SVD(n_factors=50, n_epochs=10, random_state=42)
+    algo.fit(trainset)
+
+    games = pd.read_csv('csv/game.csv')
+    ratings = pd.read_csv('csv/my_ratings.csv')
+    ratings = ratings[['userId','movieId', 'rating']]
+
+    movies = pd.read_csv('csv/game.csv')
+
+    def get_unseen_surprise(ratings, movies, userId):
+        seen_movies = ratings[ratings['userId']==userId]['movieId'].tolist()
+        total_movies = movies['id'].tolist()
+
+        unseen_movies = [movie for movie in total_movies if movie not in seen_movies]  
+        return unseen_movies
+
+    def recomm_movie_by_surprise(algo, userId, unseen_movies, top_n=10):
+        predictions = [algo.predict(str(userId), str(movieId)) for movieId in unseen_movies]
+
+        def sortkey_est(pred):
+            return pred.est
+
+        predictions.sort(key=sortkey_est, reverse=True)
+        top_predictions = predictions[:top_n]
+
+        top_movie_ids = [int(pred.iid) for pred in top_predictions]
+        top_movie_ratings = [pred.est for pred in top_predictions]
+
+        top_movie_preds = [(ids, rating, movies[movies['id']==ids]['name'].iloc[0]) for ids, rating, ids in zip(top_movie_ids, top_movie_ratings, top_movie_ids)]
+        return top_movie_preds
+
+    make_file = open('Json_For_GRAP/recoomend_for_user_game_list.json', 'w', encoding='utf-8')
+    make_file.write("{")
+    j = 0;
+
+    max_user_id = ratings.loc[ratings["userId"].idxmax()].iloc[0].astype(int)
+
+    for user_id in range(1,max_user_id+1):
+        j = j+1
+
+        unseen_lst = get_unseen_surprise(ratings, movies, user_id)
+        top_movies_preds = recomm_movie_by_surprise(algo, user_id, unseen_lst,
+                                                   top_n=10)
+
+        tempdict = {}
+        keys = ""
+
+        tempdict['user_id'] = user_id
+
+        for top_movie in top_movies_preds:
+            keys += str(top_movie[2]) + " "
+
+        tempdict['game_id'] = keys
+
+        make_file.write('"'+str(user_id)+'":')
+        json.dump(tempdict, make_file, indent="\t")
+
+        if j == max_user_id:
+            break
+        make_file.write(',\n')
+
+    make_file.write("}")
+    make_file.close()
+    s3.upload_file('Json_For_GRAP/recoomend_for_user_game_list.json', AWS_BUCKET, 'recoomend_for_user_game_list.json')
+
 # # 플라스크 서버
 
 # In[ ]:
@@ -172,6 +256,7 @@ def hello():
     # 학습 및 계산 후 S3에 저장
     save_popular_by_tag()
     save_realated_game()
+    save_recommend_for_user()
     
     # 작업 끝난 뒤 스프링에게 알림
     URL = 'http://localhost:8080/api/util/saveJson'

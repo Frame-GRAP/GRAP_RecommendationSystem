@@ -1,0 +1,12 @@
+# S3 연동
+cloud:
+  aws:
+    credentials:
+      accessKey: AKIAZT63KNFLMI7SZEI7
+      secretKey: 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
+    s3:
+      bucket: yun-springboot
+    region:
+      static: ap-northeast-2
+    stack:
+      auto: false
