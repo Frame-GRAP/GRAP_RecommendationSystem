@@ -18,6 +18,14 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import requests
 
+from surprise.dataset import DatasetAutoFolds
+from surprise import Dataset
+from surprise import Reader
+from surprise import SVD
+from surprise import accuracy
+from surprise.model_selection import train_test_split
+from surprise.model_selection import GridSearchCV
+
 
 # In[2]:
 
@@ -159,20 +167,20 @@ def save_popular_by_tag():
 
 ## 유저를 위한 추천 저장
 def save_recommend_for_user():
-    data = pd.read_csv('csv/my_ratings.csv')
+    data = pd.read_csv('csv/ratings.csv')
     data = data[['userId','movieId', 'rating']]
-    data.to_csv('csv/my_ratings_surprise.csv', index=False, header=False)
+    data.to_csv('csv/ratings_surprise.csv', index=False, header=False)
 
     reader = Reader(line_format='user item rating', sep=',',
                    rating_scale=(1, 5))
-    data = Dataset.load_from_file('csv/my_ratings_surprise.csv',reader=reader)
+    data = Dataset.load_from_file('csv/ratings_surprise.csv',reader=reader)
     train, test = train_test_split(data, test_size=0.25,
                                   random_state=42)
 
     reader = Reader(line_format='user item rating', sep=',',
                    rating_scale=(1, 5))
 
-    data_folds = DatasetAutoFolds(ratings_file='csv/my_ratings_surprise.csv',
+    data_folds = DatasetAutoFolds(ratings_file='csv/ratings_surprise.csv',
                                  reader=reader)
 
     trainset = data_folds.build_full_trainset()
@@ -180,7 +188,7 @@ def save_recommend_for_user():
     algo.fit(trainset)
 
     games = pd.read_csv('csv/game.csv')
-    ratings = pd.read_csv('csv/my_ratings.csv')
+    ratings = pd.read_csv('csv/ratings.csv')
     ratings = ratings[['userId','movieId', 'rating']]
 
     movies = pd.read_csv('csv/game.csv')
@@ -203,17 +211,19 @@ def save_recommend_for_user():
 
         top_movie_ids = [int(pred.iid) for pred in top_predictions]
         top_movie_ratings = [pred.est for pred in top_predictions]
+        top_movie_titles = movies[movies.id.isin(top_movie_ids)]['name']
 
-        top_movie_preds = [(ids, rating, movies[movies['id']==ids]['name'].iloc[0]) for ids, rating, ids in zip(top_movie_ids, top_movie_ratings, top_movie_ids)]
+        top_movie_preds = [(ids, rating, movies[movies['id']==ids]['id'].iloc[0]) for ids, rating, ids in zip(top_movie_ids, top_movie_ratings, top_movie_ids)]
         return top_movie_preds
 
-    make_file = open('Json_For_GRAP/recoomend_for_user_game_list.json', 'w', encoding='utf-8')
+    make_file = open('Json_For_GRAP/recommend_for_user_game_list.json', 'w', encoding='utf-8')
     make_file.write("{")
     j = 0;
 
     max_user_id = ratings.loc[ratings["userId"].idxmax()].iloc[0].astype(int)
 
     for user_id in range(1,max_user_id+1):
+        print(j)
         j = j+1
 
         unseen_lst = get_unseen_surprise(ratings, movies, user_id)
@@ -239,12 +249,11 @@ def save_recommend_for_user():
 
     make_file.write("}")
     make_file.close()
-    s3.upload_file('Json_For_GRAP/recoomend_for_user_game_list.json', AWS_BUCKET, 'recoomend_for_user_game_list.json')
+    s3.upload_file('Json_For_GRAP/recommend_for_user_game_list.json', AWS_BUCKET, 'recommend_for_user_game_list.json')
 
 # # 플라스크 서버
 
 # In[ ]:
-
 
 app = Flask(__name__)
 
@@ -252,6 +261,7 @@ app = Flask(__name__)
 def hello():
     # DB데이터 다운로드
     s3.download_file(AWS_BUCKET, 'game.csv', 'csv/game.csv')
+    s3.download_file(AWS_BUCKET, 'ratings.csv', 'csv/ratings.csv')
     
     # 학습 및 계산 후 S3에 저장
     save_popular_by_tag()
