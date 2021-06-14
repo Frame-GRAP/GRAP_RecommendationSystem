@@ -220,10 +220,10 @@ def save_recommend_for_user():
     make_file.write("{")
     j = 0;
 
-    max_user_id = ratings.loc[ratings["userId"].idxmax()].iloc[0].astype(int)
+    user_Id_list = ratings['userId'].drop_duplicates().sort_values()
+    user_Id_list_len = len(user_Id_list)
 
-    for user_id in range(1,max_user_id+1):
-        print(j)
+    for user_id in user_Id_list:
         j = j+1
 
         unseen_lst = get_unseen_surprise(ratings, movies, user_id)
@@ -243,7 +243,7 @@ def save_recommend_for_user():
         make_file.write('"'+str(user_id)+'":')
         json.dump(tempdict, make_file, indent="\t")
 
-        if j == max_user_id:
+        if j == user_Id_list_len:
             break
         make_file.write(',\n')
 
